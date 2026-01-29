@@ -1,18 +1,30 @@
 import { 
   users, files, sharedLinks, accessLogs,
-  type User, type InsertUser,
-  type FileRecord, type InsertFile,
+  type User, type UpsertUser,
+  type FileRecord,
   type SharedLink, type InsertSharedLink,
   type AccessLog
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql } from "drizzle-orm";
 
+interface InsertFile {
+  ownerId: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  storagePath: string;
+  encryptionIv: string;
+  encryptedAesKey: string;
+  isPublic?: boolean;
+  maxDownloads?: number;
+  expiresAt?: Date;
+}
+
 export interface IStorage {
   // Users
   getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getUserByEmail(email: string): Promise<User | undefined>;
 
   // Files
   createFile(file: InsertFile): Promise<FileRecord>;
@@ -40,13 +52,8 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.username, username));
-    return user;
-  }
-
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const [user] = await db.insert(users).values(insertUser).returning();
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
   }
 
