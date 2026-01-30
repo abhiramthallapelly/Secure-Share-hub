@@ -13,6 +13,7 @@ import { z } from "zod";
 import { objectStorageClient } from "./replit_integrations/object_storage/objectStorage";
 import sharp from "sharp";
 import { PDFDocument, rgb, degrees } from "pdf-lib";
+import { PasswordGenerator, FileEncryption } from "./crypto";
 
 // === ENCRYPTION HELPERS ===
 const ALGORITHM = 'aes-256-cbc';
@@ -236,6 +237,101 @@ export async function registerRoutes(
     const user = req.user;
     const stats = await storage.getStats(user.claims.sub);
     res.json(stats);
+  });
+
+  // === FILE-BASED ENCRYPTION ===
+  // Encrypt a file using another file as the key
+  app.post('/api/crypto/encrypt', upload.fields([
+    { name: 'file', maxCount: 1 },
+    { name: 'keyFile', maxCount: 1 }
+  ]), async (req: any, res) => {
+    try {
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      
+      if (!files.file?.[0] || !files.keyFile?.[0]) {
+        return res.status(400).json({ 
+          message: "Both 'file' (to encrypt) and 'keyFile' (encryption key) are required" 
+        });
+      }
+
+      const fileToEncrypt = files.file[0];
+      const keyFile = files.keyFile[0];
+
+      const encryptionResult = FileEncryption.encrypt(fileToEncrypt.buffer, keyFile.buffer);
+      const encryptedPackage = FileEncryption.createEncryptedPackage(encryptionResult);
+
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileToEncrypt.originalname}.encrypted"`);
+      res.setHeader('X-File-Hash', encryptionResult.fileHash);
+      res.setHeader('X-Salt', encryptionResult.salt);
+      res.send(encryptedPackage);
+    } catch (error) {
+      console.error("Encryption error:", error);
+      res.status(500).json({ message: "Encryption failed" });
+    }
+  });
+
+  // Decrypt a file using the key file
+  app.post('/api/crypto/decrypt', upload.fields([
+    { name: 'encryptedFile', maxCount: 1 },
+    { name: 'keyFile', maxCount: 1 }
+  ]), async (req: any, res) => {
+    try {
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] };
+      
+      if (!files.encryptedFile?.[0] || !files.keyFile?.[0]) {
+        return res.status(400).json({ 
+          message: "Both 'encryptedFile' and 'keyFile' are required" 
+        });
+      }
+
+      const encryptedFile = files.encryptedFile[0];
+      const keyFile = files.keyFile[0];
+
+      const parsed = FileEncryption.parseEncryptedPackage(encryptedFile.buffer);
+      
+      const result = FileEncryption.decrypt(
+        parsed.encryptedData,
+        keyFile.buffer,
+        parsed.salt,
+        parsed.iv,
+        parsed.authTag,
+        parsed.fileHash
+      );
+
+      const originalName = encryptedFile.originalname.replace(/\.encrypted$/, '');
+      
+      res.setHeader('Content-Type', 'application/octet-stream');
+      res.setHeader('Content-Disposition', `attachment; filename="${originalName}"`);
+      res.send(result.decryptedData);
+    } catch (error: any) {
+      console.error("Decryption error:", error);
+      if (error.message?.includes('Key file verification failed')) {
+        return res.status(400).json({ message: "Invalid key file - does not match the original encryption key" });
+      }
+      res.status(500).json({ message: "Decryption failed - the file may be corrupted or the wrong key was used" });
+    }
+  });
+
+  // Generate password info from a key file (for reference)
+  app.post('/api/crypto/generate-password', upload.single('keyFile'), async (req: any, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "keyFile is required" });
+      }
+
+      const result = PasswordGenerator.generateFromFile(req.file.buffer);
+      
+      res.json({
+        password: result.password,
+        salt: result.salt,
+        fileHash: result.fileHash,
+        message: "Store the salt and fileHash securely - they are needed for decryption"
+      });
+    } catch (error) {
+      console.error("Password generation error:", error);
+      res.status(500).json({ message: "Password generation failed" });
+    }
   });
 
   // === DECRYPTION & WATERMARKING ===
