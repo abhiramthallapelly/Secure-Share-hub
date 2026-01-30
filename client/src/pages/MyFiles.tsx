@@ -1,6 +1,7 @@
 import { Sidebar } from "@/components/Sidebar";
 import { UploadModal } from "@/components/UploadModal";
 import { ShareDialog } from "@/components/ShareDialog";
+import { CryptoModal } from "@/components/CryptoModal";
 import { useFiles, useDeleteFile } from "@/hooks/use-files";
 import { FileText, MoreVertical, Trash2, Download, Search, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,8 +37,10 @@ export default function MyFiles() {
                   type="text" 
                   placeholder="Search files..." 
                   className="bg-card border border-border rounded-xl pl-10 pr-4 py-2 text-sm w-64 focus:outline-none focus:border-primary transition-colors"
+                  data-testid="input-search-files"
                 />
               </div>
+              <CryptoModal />
               <UploadModal />
             </div>
           </div>
